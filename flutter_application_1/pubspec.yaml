@@ -1,0 +1,39 @@
+name: flutter_application_1
+description: "Pro Not Defteri"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Veritabanı
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Medya
+  image_picker: ^1.0.7
+
+  # Yapay Zeka
+  google_mlkit_text_recognition: ^0.13.0
+  speech_to_text: ^7.0.0  # <-- KRİTİK GÜNCELLEME: Sürüm 7.0.0 yapıldı
+
+  # Araçlar ve Tasarım
+  flutter_staggered_grid_view: ^0.7.0
+  share_plus: 7.2.0
+  path_provider: ^2.1.1
+  permission_handler: ^11.0.1
+  google_fonts: ^6.1.0
+  url_launcher: ^6.2.0
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
