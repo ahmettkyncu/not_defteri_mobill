@@ -6,6 +6,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:share_plus/share_plus.dart';
+import 'NotificationService.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,9 @@ void main() async {
   await Hive.initFlutter();
   await Hive.openBox('notlar_kutusu');
   await Hive.openBox('ayarlar');
+
+  await NotificationService.instance.init(); // burada da olabilir
+
   runApp(const NotUygulamasi());
 }
 
@@ -733,6 +737,10 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   bool _listeModu = false;
   List<Map<String, dynamic>> _gorevListesi = [];
 
+  // ✅ Hatırlatıcı alanları
+  DateTime? _reminderDateTime;
+  int? _notificationId;
+
   @override
   void initState() {
     super.initState();
@@ -741,8 +749,8 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     _gizliMi = widget.otomatikGizli;
 
     if (widget.mevcutNot != null) {
-      _baslikController.text = widget.mevcutNot!['baslik'];
-      _icerikController.text = widget.mevcutNot!['icerik'];
+      _baslikController.text = widget.mevcutNot!['baslik'] ?? "";
+      _icerikController.text = widget.mevcutNot!['icerik'] ?? "";
       _secilenRenk = widget.mevcutNot!['renk'] ?? 0xFF1F1F1F;
       _sabitMi = widget.mevcutNot!['sabit'] ?? false;
       _gizliMi = widget.mevcutNot!['gizli'] ?? false;
@@ -751,6 +759,15 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       List hamListe = widget.mevcutNot!['gorevListesi'] ?? [];
       _gorevListesi =
           hamListe.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      // ✅ Hatırlatıcı yükle
+      final reminderStr = widget.mevcutNot!['reminderAt'];
+      if (reminderStr != null && reminderStr.toString().isNotEmpty) {
+        try {
+          _reminderDateTime = DateTime.parse(reminderStr);
+        } catch (_) {}
+      }
+      _notificationId = widget.mevcutNot!['notificationId'];
     }
   }
 
@@ -775,50 +792,118 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     } else {
       setState(() => _dinliyorMu = true);
       await _speechToText.listen(
-          onResult: (r) => setState(() => _geciciYazi = r.recognizedWords),
-          localeId: "tr_TR");
+        onResult: (r) => setState(() => _geciciYazi = r.recognizedWords),
+        localeId: "tr_TR",
+      );
     }
   }
 
+  // ✅ Hatırlatıcı seç (tarih + saat)
+  Future<void> _hatirlaticiSec() async {
+    final now = DateTime.now();
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _reminderDateTime ?? now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 5),
+      helpText: "Hatırlatıcı Tarihi Seç",
+    );
+
+    if (pickedDate == null) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_reminderDateTime ?? now),
+      helpText: "Hatırlatıcı Saati Seç",
+    );
+
+    if (pickedTime == null) return;
+
+    final dt = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (dt.isBefore(now.add(const Duration(seconds: 5)))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Geçmiş bir saat seçilemez.")),
+      );
+      return;
+    }
+
+    setState(() => _reminderDateTime = dt);
+  }
+
+  // ✅ Hatırlatıcı kaldır
+  void _hatirlaticiyiKaldir() async {
+    if (_notificationId != null) {
+      await NotificationService.instance.cancel(_notificationId!);
+    }
+    setState(() {
+      _reminderDateTime = null;
+      _notificationId = null;
+    });
+  }
+
   Future<void> _ocrIslemi() async {
+    final ImagePicker picker = ImagePicker();
     showModalBottomSheet(
-        context: context,
-        builder: (ctx) => SizedBox(
-            height: 150,
-            child: Column(children: [
-              const ListTile(
-                  title: Text("Metni Tara",
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.white))),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+      context: context,
+      builder: (ctx) => SizedBox(
+        height: 150,
+        child: Column(
+          children: [
+            const ListTile(
+              title: Text(
+                "Metni Tara",
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
                 ElevatedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _ocrGerceklestir(ImageSource.camera);
-                    },
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text("Kamera")),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _ocrGerceklestir(ImageSource.camera);
+                  },
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text("Kamera"),
+                ),
                 ElevatedButton.icon(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await _ocrGerceklestir(ImageSource.gallery);
-                    },
-                    icon: const Icon(Icons.image),
-                    label: const Text("Galeri")),
-              ]),
-            ])));
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _ocrGerceklestir(ImageSource.gallery);
+                  },
+                  icon: const Icon(Icons.image),
+                  label: const Text("Galeri"),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _ocrGerceklestir(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: source);
     if (image == null) return;
+
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text("Metin taranıyor...")));
+
     final inputImage = InputImage.fromFilePath(image.path);
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
     final RecognizedText recognizedText =
         await textRecognizer.processImage(inputImage);
+
     setState(() {
       if (_listeModu) {
         List<String> satirlar = recognizedText.text.split('\n');
@@ -832,6 +917,7 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
             "${_icerikController.text}\n${recognizedText.text}";
       }
     });
+
     textRecognizer.close();
   }
 
@@ -842,9 +928,7 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   }
 
   void _resimSil(int index) {
-    setState(() {
-      _ekliResimler.removeAt(index);
-    });
+    setState(() => _ekliResimler.removeAt(index));
   }
 
   void _paylas() {
@@ -853,14 +937,22 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     }
   }
 
-  void _sil() {
+  // ✅ Not silerken bildirimi de iptal et
+  void _sil() async {
     if (widget.notKey != null) {
+      final existing = _notKutusu.getAt(widget.notKey!);
+      final nid = existing?['notificationId'];
+      if (nid != null) {
+        await NotificationService.instance.cancel(nid as int);
+      }
+
       _notKutusu.deleteAt(widget.notKey!);
       Navigator.pop(context);
     }
   }
 
-  void _kaydetVeyaGuncelle() {
+  // ✅ Kaydet/Güncelle + schedule/cancel
+  void _kaydetVeyaGuncelle() async {
     if (_dinliyorMu) {
       _speechToText.stop();
       if (_geciciYazi.isNotEmpty && !_listeModu) {
@@ -868,31 +960,71 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       }
     }
 
-    if (_baslikController.text.isNotEmpty ||
-        _icerikController.text.isNotEmpty ||
-        _ekliResimler.isNotEmpty ||
-        _gorevListesi.isNotEmpty) {
-      Map yeniVeri = {
-        "baslik": _baslikController.text,
-        "icerik": _icerikController.text,
-        "tarih": DateTime.now().toString(),
-        "renk": _secilenRenk,
-        "sabit": _sabitMi,
-        "gizli": _gizliMi,
-        "listeModu": _listeModu,
-        "gorevListesi": _gorevListesi,
-        "resimler": _ekliResimler,
-      };
-      if (widget.notKey != null) {
-        _notKutusu.putAt(widget.notKey!, yeniVeri);
-      } else {
-        _notKutusu.add(yeniVeri);
-      }
-      Navigator.pop(context);
-    } else {
+    final bosMu = _baslikController.text.isEmpty &&
+        _icerikController.text.isEmpty &&
+        _ekliResimler.isEmpty &&
+        _gorevListesi.isEmpty;
+
+    if (bosMu) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text("Boş not kaydedilemez")));
+      return;
     }
+
+    // ✅ notification id üret / koru
+    _notificationId ??=
+        DateTime.now().millisecondsSinceEpoch.remainder(1000000000);
+
+    Map yeniVeri = {
+      "baslik": _baslikController.text,
+      "icerik": _icerikController.text,
+      "tarih": DateTime.now().toString(),
+      "renk": _secilenRenk,
+      "sabit": _sabitMi,
+      "gizli": _gizliMi,
+      "listeModu": _listeModu,
+      "gorevListesi": _gorevListesi,
+      "resimler": _ekliResimler,
+
+      // ✅ Hatırlatıcı
+      "reminderAt": _reminderDateTime?.toIso8601String(),
+      "notificationId": _notificationId,
+    };
+
+    if (widget.notKey != null) {
+      _notKutusu.putAt(widget.notKey!, yeniVeri);
+    } else {
+      _notKutusu.add(yeniVeri);
+    }
+
+    // ✅ Hatırlatıcı varsa kur, yoksa iptal et
+    if (_reminderDateTime != null && _notificationId != null) {
+      await NotificationService.instance.schedule(
+        id: _notificationId!,
+        title: _baslikController.text.isNotEmpty
+            ? _baslikController.text
+            : "Not Hatırlatıcı",
+        body: _icerikController.text.isNotEmpty
+            ? _icerikController.text
+            : "Notunu kontrol et",
+        dateTime: _reminderDateTime!,
+      );
+    } else {
+      if (_notificationId != null) {
+        await NotificationService.instance.cancel(_notificationId!);
+      }
+    }
+
+    Navigator.pop(context);
+  }
+
+  String _formatReminder(DateTime dt) {
+    final dd = dt.day.toString().padLeft(2, '0');
+    final mm = dt.month.toString().padLeft(2, '0');
+    final yyyy = dt.year.toString();
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return "$dd.$mm.$yyyy  $hh:$min";
   }
 
   @override
@@ -905,6 +1037,7 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       0xFFB71C1C,
       0xFFFF6F00
     ];
+
     return Scaffold(
       backgroundColor: Color(_secilenRenk),
       appBar: AppBar(
@@ -916,16 +1049,19 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
             : null,
         actions: [
           IconButton(
-              icon: Icon(_sabitMi ? Icons.push_pin : Icons.push_pin_outlined,
-                  color: Colors.white),
-              onPressed: () => setState(() => _sabitMi = !_sabitMi)),
+            icon: Icon(_sabitMi ? Icons.push_pin : Icons.push_pin_outlined,
+                color: Colors.white),
+            onPressed: () => setState(() => _sabitMi = !_sabitMi),
+          ),
           IconButton(
-              icon: const Icon(Icons.share, color: Colors.white),
-              onPressed: _paylas),
+            icon: const Icon(Icons.share, color: Colors.white),
+            onPressed: _paylas,
+          ),
           if (widget.notKey != null)
             IconButton(
-                icon: const Icon(Icons.delete, color: Colors.white),
-                onPressed: _sil),
+              icon: const Icon(Icons.delete, color: Colors.white),
+              onPressed: _sil,
+            ),
           const SizedBox(width: 10),
         ],
       ),
@@ -937,15 +1073,57 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
               child: Column(
                 children: [
                   TextField(
-                      controller: _baslikController,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
-                      decoration: const InputDecoration(
-                          hintText: "Başlık",
-                          hintStyle: TextStyle(color: Colors.white54),
-                          border: InputBorder.none)),
+                    controller: _baslikController,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: "Başlık",
+                      hintStyle: TextStyle(color: Colors.white54),
+                      border: InputBorder.none,
+                    ),
+                  ),
+
+                  // ✅ Hatırlatıcı UI (Başlığın hemen altı)
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.alarm, color: Colors.white70),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _reminderDateTime == null
+                                ? "Hatırlatıcı yok"
+                                : "Hatırlatıcı: ${_formatReminder(_reminderDateTime!)}",
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _hatirlaticiSec,
+                          child: const Text("Seç"),
+                        ),
+                        if (_reminderDateTime != null)
+                          IconButton(
+                            onPressed: _hatirlaticiyiKaldir,
+                            icon: const Icon(Icons.close,
+                                color: Colors.redAccent),
+                            tooltip: "Hatırlatıcıyı kaldır",
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
                   if (_listeModu) ...[
                     ReorderableListView(
                       shrinkWrap: true,
@@ -964,167 +1142,208 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                           ListTile(
                             key: ValueKey(index),
                             leading: Checkbox(
-                                value: _gorevListesi[index]['yapildi'],
-                                onChanged: (val) => setState(() =>
-                                    _gorevListesi[index]['yapildi'] = val),
-                                checkColor: Colors.black,
-                                activeColor: Colors.white),
+                              value: _gorevListesi[index]['yapildi'],
+                              onChanged: (val) => setState(
+                                  () => _gorevListesi[index]['yapildi'] = val),
+                              checkColor: Colors.black,
+                              activeColor: Colors.white,
+                            ),
                             title: TextFormField(
                               initialValue: _gorevListesi[index]['text'],
                               style: TextStyle(
-                                  color: Colors.white,
-                                  decoration: _gorevListesi[index]['yapildi']
-                                      ? TextDecoration.lineThrough
-                                      : null),
+                                color: Colors.white,
+                                decoration: _gorevListesi[index]['yapildi']
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
                               decoration: const InputDecoration(
                                   border: InputBorder.none),
                               onChanged: (val) =>
                                   _gorevListesi[index]['text'] = val,
                             ),
                             trailing: IconButton(
-                                icon:
-                                    const Icon(Icons.close, color: Colors.grey),
-                                onPressed: () => setState(
-                                    () => _gorevListesi.removeAt(index))),
+                              icon: const Icon(Icons.close, color: Colors.grey),
+                              onPressed: () =>
+                                  setState(() => _gorevListesi.removeAt(index)),
+                            ),
                           ),
                       ],
                     ),
                     TextButton.icon(
-                        onPressed: () => setState(() =>
-                            _gorevListesi.add({'text': '', 'yapildi': false})),
-                        icon: const Icon(Icons.add, color: Colors.white70),
-                        label: const Text("Yeni Madde Ekle",
-                            style: TextStyle(color: Colors.white70))),
+                      onPressed: () => setState(() =>
+                          _gorevListesi.add({'text': '', 'yapildi': false})),
+                      icon: const Icon(Icons.add, color: Colors.white70),
+                      label: const Text(
+                        "Yeni Madde Ekle",
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
                   ] else
                     TextField(
-                        controller: _icerikController,
-                        maxLines: null,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 18),
-                        decoration: const InputDecoration(
-                            hintText: "Notunuzu yazın...",
-                            hintStyle: TextStyle(color: Colors.white54),
-                            border: InputBorder.none)),
+                      controller: _icerikController,
+                      maxLines: null,
+                      style: const TextStyle(color: Colors.white, fontSize: 18),
+                      decoration: const InputDecoration(
+                        hintText: "Notunuzu yazın...",
+                        hintStyle: TextStyle(color: Colors.white54),
+                        border: InputBorder.none,
+                      ),
+                    ),
+
                   if (_dinliyorMu)
-                    Text(" $_geciciYazi...",
-                        style: const TextStyle(
-                            fontSize: 18,
-                            color: Colors.white,
-                            fontStyle: FontStyle.italic)),
+                    Text(
+                      " $_geciciYazi...",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.white,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+
                   const SizedBox(height: 20),
+
                   if (_ekliResimler.isNotEmpty)
                     SizedBox(
-                        height: 120,
-                        child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _ekliResimler.length,
-                            itemBuilder: (context, index) {
-                              return Stack(children: [
-                                Container(
-                                    margin: const EdgeInsets.only(
-                                        right: 10, top: 10),
-                                    width: 100,
-                                    height: 100,
-                                    decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
-                                        image: DecorationImage(
-                                            image: FileImage(
-                                                File(_ekliResimler[index])),
-                                            fit: BoxFit.cover))),
-                                Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: GestureDetector(
-                                        onTap: () => _resimSil(index),
-                                        child: const CircleAvatar(
-                                            radius: 12,
-                                            backgroundColor: Colors.red,
-                                            child: Icon(Icons.close,
-                                                size: 16,
-                                                color: Colors.white)))),
-                              ]);
-                            })),
+                      height: 120,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _ekliResimler.length,
+                        itemBuilder: (context, index) {
+                          return Stack(
+                            children: [
+                              Container(
+                                margin:
+                                    const EdgeInsets.only(right: 10, top: 10),
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  image: DecorationImage(
+                                    image:
+                                        FileImage(File(_ekliResimler[index])),
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                child: GestureDetector(
+                                  onTap: () => _resimSil(index),
+                                  child: const CircleAvatar(
+                                    radius: 12,
+                                    backgroundColor: Colors.red,
+                                    child: Icon(Icons.close,
+                                        size: 16, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
+
+          // alt toolbar
           Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             decoration: const BoxDecoration(
-                color: Colors.black26,
-                border: Border(top: BorderSide(color: Colors.white10))),
+              color: Colors.black26,
+              border: Border(top: BorderSide(color: Colors.white10)),
+            ),
             child: Column(
               children: [
                 SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                        children: renkPaleti
-                            .map((renk) => GestureDetector(
-                                onTap: () =>
-                                    setState(() => _secilenRenk = renk),
-                                child: Container(
-                                    margin: const EdgeInsets.only(
-                                        right: 12, bottom: 10),
-                                    width: 30,
-                                    height: 30,
-                                    decoration: BoxDecoration(
-                                        color: Color(renk),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: _secilenRenk == renk
-                                                ? Colors.white
-                                                : Colors.grey.shade800,
-                                            width: 2)),
-                                    child: _secilenRenk == renk
-                                        ? const Icon(Icons.check,
-                                            size: 16, color: Colors.white)
-                                        : null)))
-                            .toList())),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: renkPaleti
+                        .map(
+                          (renk) => GestureDetector(
+                            onTap: () => setState(() => _secilenRenk = renk),
+                            child: Container(
+                              margin:
+                                  const EdgeInsets.only(right: 12, bottom: 10),
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: Color(renk),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _secilenRenk == renk
+                                      ? Colors.white
+                                      : Colors.grey.shade800,
+                                  width: 2,
+                                ),
+                              ),
+                              child: _secilenRenk == renk
+                                  ? const Icon(Icons.check,
+                                      size: 16, color: Colors.white)
+                                  : null,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Tooltip(
-                        message: "Metni Tara",
-                        child: IconButton(
-                            icon: const Icon(Icons.document_scanner_outlined,
-                                color: Colors.white, size: 28),
-                            onPressed: _ocrIslemi)),
+                      message: "Metni Tara",
+                      child: IconButton(
+                        icon: const Icon(Icons.document_scanner_outlined,
+                            color: Colors.white, size: 28),
+                        onPressed: _ocrIslemi,
+                      ),
+                    ),
                     Tooltip(
-                        message: "Sesle Yaz",
-                        child: IconButton(
-                            icon: Icon(
-                                _dinliyorMu
-                                    ? Icons.stop_circle_outlined
-                                    : Icons.record_voice_over,
-                                color: _dinliyorMu ? Colors.red : Colors.white,
-                                size: 28),
-                            onPressed: _sesleYazmayiYonet)),
+                      message: "Sesle Yaz",
+                      child: IconButton(
+                        icon: Icon(
+                          _dinliyorMu
+                              ? Icons.stop_circle_outlined
+                              : Icons.record_voice_over,
+                          color: _dinliyorMu ? Colors.red : Colors.white,
+                          size: 28,
+                        ),
+                        onPressed: _sesleYazmayiYonet,
+                      ),
+                    ),
                     Tooltip(
-                        message: "Resim Ekle",
-                        child: IconButton(
-                            icon: const Icon(Icons.camera_alt,
-                                color: Colors.white, size: 28),
-                            onPressed: _resimEkle)),
+                      message: "Resim Ekle",
+                      child: IconButton(
+                        icon: const Icon(Icons.camera_alt,
+                            color: Colors.white, size: 28),
+                        onPressed: _resimEkle,
+                      ),
+                    ),
                     Tooltip(
                       message: "Liste Modu",
                       child: IconButton(
                         icon: Icon(
-                            _listeModu ? Icons.list_alt : Icons.edit_note,
-                            color: _listeModu
-                                ? const Color(0xFFFFC107)
-                                : Colors.white,
-                            size: 28),
+                          _listeModu ? Icons.list_alt : Icons.edit_note,
+                          color: _listeModu
+                              ? const Color(0xFFFFC107)
+                              : Colors.white,
+                          size: 28,
+                        ),
                         onPressed: () =>
                             setState(() => _listeModu = !_listeModu),
                       ),
                     ),
                     ElevatedButton(
-                        onPressed: _kaydetVeyaGuncelle,
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFC107),
-                            shape: const CircleBorder(),
-                            padding: const EdgeInsets.all(12)),
-                        child: const Icon(Icons.check, color: Colors.black)),
+                      onPressed: _kaydetVeyaGuncelle,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFC107),
+                        shape: const CircleBorder(),
+                        padding: const EdgeInsets.all(12),
+                      ),
+                      child: const Icon(Icons.check, color: Colors.black),
+                    ),
                   ],
                 ),
               ],
