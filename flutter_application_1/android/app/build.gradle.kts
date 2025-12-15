@@ -6,17 +6,20 @@ plugins {
 }
 
 android {
+    ndkVersion = "27.0.12077973"
     namespace = "com.example.flutter_application_1"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    
+
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {
@@ -41,4 +44,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

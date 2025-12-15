@@ -9,42 +9,81 @@ import 'package:share_plus/share_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Hive.initFlutter();
   await Hive.openBox('notlar_kutusu');
   await Hive.openBox('ayarlar');
   runApp(const NotUygulamasi());
 }
 
-class NotUygulamasi extends StatelessWidget {
+class NotUygulamasi extends StatefulWidget {
   const NotUygulamasi({super.key});
 
   @override
+  State<NotUygulamasi> createState() => _NotUygulamasiState();
+}
+
+class _NotUygulamasiState extends State<NotUygulamasi> {
+  final _ayarlarKutusu = Hive.box('ayarlar');
+  late bool _darkMi;
+
+  @override
+  void initState() {
+    super.initState();
+    _darkMi = _ayarlarKutusu.get('dark_mode', defaultValue: true);
+  }
+
+  void _temaDegistir(bool val) {
+    setState(() => _darkMi = val);
+    _ayarlarKutusu.put('dark_mode', val);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final ThemeData darkTheme = ThemeData.dark().copyWith(
+      scaffoldBackgroundColor: Colors.black,
+      appBarTheme:
+          const AppBarTheme(backgroundColor: Colors.black, elevation: 0),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: Color(0xFFFFC107),
+        foregroundColor: Colors.black,
+      ),
+      bottomSheetTheme:
+          const BottomSheetThemeData(backgroundColor: Color(0xFF1F1F1F)),
+    );
+
+    final ThemeData lightTheme = ThemeData.light().copyWith(
+      scaffoldBackgroundColor: Colors.white,
+      appBarTheme:
+          const AppBarTheme(backgroundColor: Colors.white, elevation: 0),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: Color(0xFFFFC107),
+        foregroundColor: Colors.black,
+      ),
+      bottomSheetTheme:
+          const BottomSheetThemeData(backgroundColor: Colors.white),
+    );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Pro Not Defteri',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.black,
-          elevation: 0,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFFFFC107),
-          foregroundColor: Colors.black,
-        ),
-        bottomSheetTheme: const BottomSheetThemeData(
-          backgroundColor: Color(0xFF1F1F1F),
-        ),
+      theme: _darkMi ? darkTheme : lightTheme,
+      home: AnaSayfa(
+        darkMi: _darkMi,
+        onThemeChanged: _temaDegistir,
       ),
-      home: const AnaSayfa(),
     );
   }
 }
 
 // --- 1. SAYFA: ANA SAYFA ---
 class AnaSayfa extends StatefulWidget {
-  const AnaSayfa({super.key});
+  final bool darkMi;
+  final void Function(bool) onThemeChanged;
+
+  const AnaSayfa(
+      {super.key, required this.darkMi, required this.onThemeChanged});
+
   @override
   State<AnaSayfa> createState() => _AnaSayfaState();
 }
@@ -59,14 +98,11 @@ class _AnaSayfaState extends State<AnaSayfa> {
 
   // --- AKILLI ŞİFRE YÖNETİMİ ---
   Future<void> _kasaIslemleri() async {
-    // 1. Önce veritabanında kayıtlı şifre var mı diye bakıyoruz.
     String? kayitliSifre = _ayarlarKutusu.get('kasa_sifresi');
 
     if (kayitliSifre == null) {
-      // HİÇ ŞİFRE YOKSA -> ŞİFRE OLUŞTURMA EKRANI
       await _sifreOlustur();
     } else {
-      // ŞİFRE VARSA -> GİRİŞ EKRANI
       await _sifreSor(kayitliSifre);
     }
   }
@@ -78,7 +114,7 @@ class _AnaSayfaState extends State<AnaSayfa> {
 
     await showDialog(
       context: context,
-      barrierDismissible: false, // Dışarı basınca kapanmasın
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1F1F1F),
         title: const Text("🆕 Kasa Kurulumu",
@@ -87,8 +123,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-                "Gizli kasanızı kullanmak için lütfen bir şifre belirleyin.",
-                style: TextStyle(color: Colors.white70)),
+              "Gizli kasanızı kullanmak için lütfen bir şifre belirleyin.",
+              style: TextStyle(color: Colors.white70),
+            ),
             const SizedBox(height: 15),
             TextField(
               controller: pass1,
@@ -96,10 +133,11 @@ class _AnaSayfaState extends State<AnaSayfa> {
               obscureText: true,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                  labelText: "Şifre",
-                  labelStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.grey))),
+                labelText: "Şifre",
+                labelStyle: TextStyle(color: Colors.grey),
+                enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey)),
+              ),
             ),
             TextField(
               controller: pass2,
@@ -107,33 +145,35 @@ class _AnaSayfaState extends State<AnaSayfa> {
               obscureText: true,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                  labelText: "Şifre Tekrar",
-                  labelStyle: TextStyle(color: Colors.grey),
-                  enabledBorder: UnderlineInputBorder(
-                      borderSide: BorderSide(color: Colors.grey))),
+                labelText: "Şifre Tekrar",
+                labelStyle: TextStyle(color: Colors.grey),
+                enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.grey)),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("İptal", style: TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("İptal", style: TextStyle(color: Colors.red)),
+          ),
           TextButton(
             onPressed: () {
               if (pass1.text.isNotEmpty && pass1.text == pass2.text) {
-                // Şifreyi Kaydet
                 _ayarlarKutusu.put('kasa_sifresi', pass1.text);
                 Navigator.pop(context);
 
-                // Kasayı otomatik aç
                 setState(() => _gizliModAcik = true);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text("✅ Şifre Oluşturuldu! Kasa Açık."),
-                    backgroundColor: Colors.green));
+                  content: Text("✅ Şifre Oluşturuldu! Kasa Açık."),
+                  backgroundColor: Colors.green,
+                ));
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text("Şifreler eşleşmiyor veya boş!"),
-                    backgroundColor: Colors.red));
+                  content: Text("Şifreler eşleşmiyor veya boş!"),
+                  backgroundColor: Colors.red,
+                ));
               }
             },
             child: const Text("Oluştur", style: TextStyle(color: Colors.white)),
@@ -166,8 +206,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("İptal", style: TextStyle(color: Colors.red))),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("İptal", style: TextStyle(color: Colors.red)),
+          ),
           TextButton(
             onPressed: () {
               if (girilenSifre.text == dogruSifre) {
@@ -181,8 +222,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
               } else {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text("Hatalı Şifre!"),
-                    backgroundColor: Colors.red));
+                  content: Text("Hatalı Şifre!"),
+                  backgroundColor: Colors.red,
+                ));
               }
             },
             child: const Text("Giriş", style: TextStyle(color: Colors.white)),
@@ -208,29 +250,97 @@ class _AnaSayfaState extends State<AnaSayfa> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // ✅ YAN PANEL (DRAWER) - Tema + Tüm notları sil
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  "Ayarlar",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Divider(height: 1),
+
+              // ✅ Tema
+              SwitchListTile(
+                secondary:
+                    Icon(widget.darkMi ? Icons.dark_mode : Icons.light_mode),
+                title: const Text("Tema"),
+                subtitle: Text(widget.darkMi ? "Koyu (Siyah)" : "Açık (Beyaz)"),
+                value: widget.darkMi,
+                onChanged: (val) => widget.onThemeChanged(val),
+              ),
+
+              const Divider(height: 1),
+
+              // ✅ Tüm Notları Sil
+              ListTile(
+                leading: const Icon(Icons.delete_sweep, color: Colors.red),
+                title: const Text("Tüm Notları Sil"),
+                onTap: () {
+                  _notKutusu.clear();
+                  Navigator.pop(context); // drawer kapansın
+                },
+              ),
+              // ✅ SADECE GİZLİ KASA AÇIKKEN: Şifre Değiştir
+              if (_gizliModAcik) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.password, color: Colors.orange),
+                  title: const Text("Gizli Kasa Şifresini Değiştir"),
+                  onTap: () {
+                    Navigator.pop(context); // drawer kapansın
+                    _sifreDegistir();
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+
+      // Gizli kasada appBar aynen kalsın (sadece settings iconu yok)
       appBar: _gizliModAcik
           ? AppBar(
               leading: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => setState(() => _gizliModAcik = false)),
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => setState(() => _gizliModAcik = false),
+              ),
               title: const Text("🔒 Gizli Kasa",
                   style: TextStyle(color: Colors.green)),
-              actions: [
-                IconButton(
-                    icon: const Icon(Icons.settings, color: Colors.grey),
-                    onPressed: () => _ayarlarMenusunuAc(context)),
-              ],
             )
           : null,
+
       body: SafeArea(
         child: Column(
           children: [
-            if (!_gizliModAcik)
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
-                child: Row(
-                  children: [
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+              child: Row(
+                children: [
+                  // ✅ Hamburger her zaman
+                  Builder(
+                    builder: (ctx) => Container(
+                      height: 50,
+                      width: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1F1F1F),
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.menu, color: Colors.grey),
+                        onPressed: () => Scaffold.of(ctx).openDrawer(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // ✅ Arama sadece kasa KAPALIYKEN
+                  if (!_gizliModAcik)
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -248,9 +358,10 @@ class _AnaSayfaState extends State<AnaSayfa> {
                                 onChanged: (value) => setState(
                                     () => _aramaMetni = value.toLowerCase()),
                                 decoration: const InputDecoration(
-                                    hintText: "Notlarda ara...",
-                                    hintStyle: TextStyle(color: Colors.grey),
-                                    border: InputBorder.none),
+                                  hintText: "Notlarda ara...",
+                                  hintStyle: TextStyle(color: Colors.grey),
+                                  border: InputBorder.none,
+                                ),
                                 style: const TextStyle(color: Colors.white),
                               ),
                             ),
@@ -258,25 +369,13 @@ class _AnaSayfaState extends State<AnaSayfa> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Container(
-                      height: 50, width: 50,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF1F1F1F),
-                          borderRadius: BorderRadius.circular(25)),
-                      // ANA SAYFA AYARLAR BUTONU (Şifre değiştirme burada YOK)
-                      child: IconButton(
-                          icon: const Icon(Icons.settings, color: Colors.grey),
-                          onPressed: () => _ayarlarMenusunuAc(context)),
-                    ),
-                  ],
-                ),
+                ],
               ),
+            ),
             Expanded(
               child: RefreshIndicator(
                 color: const Color(0xFFFFC107),
                 backgroundColor: Colors.black,
-                // Aşağı çekince Akıllı Kasa İşlemleri Başlar
                 onRefresh: () async {
                   if (!_gizliModAcik) await _kasaIslemleri();
                 },
@@ -326,18 +425,20 @@ class _AnaSayfaState extends State<AnaSayfa> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                                _gizliModAcik
-                                    ? Icons.lock_outline
-                                    : Icons.note_alt_outlined,
-                                size: 60,
-                                color: Colors.grey.shade800),
+                              _gizliModAcik
+                                  ? Icons.lock_outline
+                                  : Icons.note_alt_outlined,
+                              size: 60,
+                              color: Colors.grey.shade800,
+                            ),
                             const SizedBox(height: 10),
                             Text(
-                                _gizliModAcik
-                                    ? "Kasa Boş"
-                                    : "Not listeniz boş\n(Gizli kasa için aşağı çek)",
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey.shade600)),
+                              _gizliModAcik
+                                  ? "Kasa Boş"
+                                  : "Not listeniz boş\n(Gizli kasa için aşağı çek)",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
                           ],
                         ),
                       );
@@ -373,44 +474,48 @@ class _AnaSayfaState extends State<AnaSayfa> {
                           },
                           onLongPress: () {
                             showModalBottomSheet(
-                                context: context,
-                                builder: (ctx) => Container(
-                                      height: 120,
-                                      color: const Color(0xFF1F1F1F),
-                                      child: Column(
-                                        children: [
-                                          ListTile(
-                                            leading: Icon(
-                                                _gizliModAcik
-                                                    ? Icons.lock_open
-                                                    : Icons.lock,
-                                                color: Colors.yellow),
-                                            title: Text(
-                                                _gizliModAcik
-                                                    ? "Notu Kasadan Çıkar"
-                                                    : "Notu Gizli Kasaya Taşı",
-                                                style: const TextStyle(
-                                                    color: Colors.white)),
-                                            onTap: () {
-                                              Navigator.pop(ctx);
-                                              _notuTasi(gercekIndex, not,
-                                                  !_gizliModAcik);
-                                            },
-                                          ),
-                                          ListTile(
-                                            leading: const Icon(Icons.delete,
-                                                color: Colors.red),
-                                            title: const Text("Notu Sil",
-                                                style: TextStyle(
-                                                    color: Colors.white)),
-                                            onTap: () {
-                                              Navigator.pop(ctx);
-                                              _notKutusu.deleteAt(gercekIndex);
-                                            },
-                                          ),
-                                        ],
+                              context: context,
+                              builder: (ctx) => Container(
+                                height: 120,
+                                color: const Color(0xFF1F1F1F),
+                                child: Column(
+                                  children: [
+                                    ListTile(
+                                      leading: Icon(
+                                        _gizliModAcik
+                                            ? Icons.lock_open
+                                            : Icons.lock,
+                                        color: Colors.yellow,
                                       ),
-                                    ));
+                                      title: Text(
+                                        _gizliModAcik
+                                            ? "Notu Kasadan Çıkar"
+                                            : "Notu Gizli Kasaya Taşı",
+                                        style: const TextStyle(
+                                            color: Colors.white),
+                                      ),
+                                      onTap: () {
+                                        Navigator.pop(ctx);
+                                        _notuTasi(
+                                            gercekIndex, not, !_gizliModAcik);
+                                      },
+                                    ),
+                                    ListTile(
+                                      leading: const Icon(Icons.delete,
+                                          color: Colors.red),
+                                      title: const Text(
+                                        "Notu Sil",
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                      onTap: () {
+                                        Navigator.pop(ctx);
+                                        _notKutusu.deleteAt(gercekIndex);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
                           },
                           child: Container(
                             decoration: BoxDecoration(
@@ -421,51 +526,71 @@ class _AnaSayfaState extends State<AnaSayfa> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(not["baslik"] ?? "",
-                                    style: TextStyle(
-                                        color: _yaziRenginiBul(kartRengi),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
+                                Text(
+                                  not["baslik"] ?? "",
+                                  style: TextStyle(
+                                    color: _yaziRenginiBul(kartRengi),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
                                 const SizedBox(height: 8),
                                 isListe
-                                    ? Row(children: [
-                                        Icon(Icons.check_box,
+                                    ? Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_box,
                                             size: 16,
                                             color: _yaziRenginiBul(kartRengi)
-                                                .withOpacity(0.7)),
-                                        const SizedBox(width: 5),
-                                        Text("Görev Listesi",
+                                                .withOpacity(0.7),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            "Görev Listesi",
                                             style: TextStyle(
-                                                color:
-                                                    _yaziRenginiBul(kartRengi)
-                                                        .withOpacity(0.7),
-                                                fontSize: 14))
-                                      ])
-                                    : Text(not["icerik"] ?? "",
+                                              color: _yaziRenginiBul(kartRengi)
+                                                  .withOpacity(0.7),
+                                              fontSize: 14,
+                                            ),
+                                          )
+                                        ],
+                                      )
+                                    : Text(
+                                        not["icerik"] ?? "",
                                         maxLines: 6,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                            color: _yaziRenginiBul(kartRengi)
-                                                .withOpacity(0.7),
-                                            fontSize: 14)),
+                                          color: _yaziRenginiBul(kartRengi)
+                                              .withOpacity(0.7),
+                                          fontSize: 14,
+                                        ),
+                                      ),
                                 if (ekliResimler.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 10),
-                                    child: Row(children: [
-                                      const Icon(Icons.image,
-                                          size: 14, color: Colors.white70),
-                                      Text(" ${ekliResimler.length} ",
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.image,
+                                            size: 14, color: Colors.white70),
+                                        Text(
+                                          " ${ekliResimler.length} ",
                                           style: const TextStyle(
-                                              color: Colors.white70,
-                                              fontSize: 12)),
-                                    ]),
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 const SizedBox(height: 12),
-                                Text(_tarihFormatla(not["tarih"]),
-                                    style: TextStyle(
-                                        color: _yaziRenginiBul(kartRengi)
-                                            .withOpacity(0.5),
-                                        fontSize: 12)),
+                                Text(
+                                  _tarihFormatla(not["tarih"]),
+                                  style: TextStyle(
+                                    color: _yaziRenginiBul(kartRengi)
+                                        .withOpacity(0.5),
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -479,6 +604,7 @@ class _AnaSayfaState extends State<AnaSayfa> {
           ],
         ),
       ),
+
       floatingActionButton: SizedBox(
         width: 65,
         height: 65,
@@ -488,11 +614,15 @@ class _AnaSayfaState extends State<AnaSayfa> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-                builder: (context) =>
-                    NotEkleSayfasi(otomatikGizli: _gizliModAcik)),
+              builder: (context) =>
+                  NotEkleSayfasi(otomatikGizli: _gizliModAcik),
+            ),
           ),
-          child: Icon(Icons.add,
-              size: 32, color: _gizliModAcik ? Colors.white : Colors.black),
+          child: Icon(
+            Icons.add,
+            size: 32,
+            color: _gizliModAcik ? Colors.white : Colors.black,
+          ),
         ),
       ),
     );
@@ -500,6 +630,7 @@ class _AnaSayfaState extends State<AnaSayfa> {
 
   Color _yaziRenginiBul(Color arkaplan) =>
       arkaplan.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+
   String _tarihFormatla(String? t) {
     if (t == null) return "";
     try {
@@ -510,101 +641,72 @@ class _AnaSayfaState extends State<AnaSayfa> {
     }
   }
 
-  void _ayarlarMenusunuAc(BuildContext context) {
-    showModalBottomSheet(
-        context: context,
-        builder: (c) => SizedBox(
-            height: 200,
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                    width: 40,
-                    height: 4,
-                    color: Colors.grey,
-                    margin: const EdgeInsets.only(bottom: 20)),
-
-                // SADECE GİZLİ MOD AÇIKSA GÖSTER
-                if (_gizliModAcik)
-                  ListTile(
-                      leading: const Icon(Icons.password, color: Colors.orange),
-                      title: const Text("Gizli Kasa Şifresini Değiştir",
-                          style: TextStyle(color: Colors.white)),
-                      onTap: () {
-                        Navigator.pop(c);
-                        _sifreDegistir();
-                      }),
-
-                ListTile(
-                    leading: const Icon(Icons.delete_sweep, color: Colors.red),
-                    title: const Text("Tüm Notları Sil",
-                        style: TextStyle(color: Colors.white)),
-                    onTap: () {
-                      _notKutusu.clear();
-                      Navigator.pop(c);
-                    })
-              ],
-            )));
-  }
-
   Future<void> _sifreDegistir() async {
     TextEditingController eski = TextEditingController();
     TextEditingController yeni = TextEditingController();
     String? mevcut = _ayarlarKutusu.get('kasa_sifresi');
 
     await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF1F1F1F),
-              title: const Text("Şifre Değiştir",
-                  style: TextStyle(color: Colors.white)),
-              content: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextField(
-                    controller: eski,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                        hintText: "Eski Şifre",
-                        hintStyle: TextStyle(color: Colors.grey))),
-                TextField(
-                    controller: yeni,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                        hintText: "Yeni Şifre",
-                        hintStyle: TextStyle(color: Colors.grey))),
-              ]),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text("İptal",
-                        style: TextStyle(color: Colors.red))),
-                TextButton(
-                    onPressed: () {
-                      if (eski.text == mevcut && yeni.text.isNotEmpty) {
-                        _ayarlarKutusu.put('kasa_sifresi', yeni.text);
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Şifre Değişti!"),
-                                backgroundColor: Colors.green));
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text("Eski şifre yanlış!"),
-                                backgroundColor: Colors.red));
-                      }
-                    },
-                    child: const Text("Kaydet",
-                        style: TextStyle(color: Colors.white))),
-              ],
-            ));
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title:
+            const Text("Şifre Değiştir", style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: eski,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: "Eski Şifre",
+                hintStyle: TextStyle(color: Colors.grey),
+              ),
+            ),
+            TextField(
+              controller: yeni,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: "Yeni Şifre",
+                hintStyle: TextStyle(color: Colors.grey),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("İptal", style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () {
+              if (eski.text == mevcut && yeni.text.isNotEmpty) {
+                _ayarlarKutusu.put('kasa_sifresi', yeni.text);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text("Şifre Değişti!"),
+                  backgroundColor: Colors.green,
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text("Eski şifre yanlış!"),
+                  backgroundColor: Colors.red,
+                ));
+              }
+            },
+            child: const Text("Kaydet", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-// --- 2. SAYFA: NOT EKLEME/DÜZENLEME (AYNI KOD) ---
+// --- 2. SAYFA: NOT EKLEME/DÜZENLEME (SENİN KODUN AYNEN DEVAM) ---
 class NotEkleSayfasi extends StatefulWidget {
   final Map? mevcutNot;
   final int? notKey; // Index
@@ -679,7 +781,6 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   }
 
   Future<void> _ocrIslemi() async {
-    final ImagePicker picker = ImagePicker();
     showModalBottomSheet(
         context: context,
         builder: (ctx) => SizedBox(
@@ -722,8 +823,9 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       if (_listeModu) {
         List<String> satirlar = recognizedText.text.split('\n');
         for (var s in satirlar) {
-          if (s.trim().isNotEmpty)
+          if (s.trim().isNotEmpty) {
             _gorevListesi.add({'text': s.trim(), 'yapildi': false});
+          }
         }
       } else {
         _icerikController.text =
@@ -746,8 +848,9 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   }
 
   void _paylas() {
-    if (_baslikController.text.isNotEmpty)
+    if (_baslikController.text.isNotEmpty) {
       Share.share("${_baslikController.text}\n\n${_icerikController.text}");
+    }
   }
 
   void _sil() {
@@ -760,8 +863,9 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   void _kaydetVeyaGuncelle() {
     if (_dinliyorMu) {
       _speechToText.stop();
-      if (_geciciYazi.isNotEmpty && !_listeModu)
+      if (_geciciYazi.isNotEmpty && !_listeModu) {
         _icerikController.text = "${_icerikController.text} $_geciciYazi";
+      }
     }
 
     if (_baslikController.text.isNotEmpty ||
@@ -779,10 +883,11 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
         "gorevListesi": _gorevListesi,
         "resimler": _ekliResimler,
       };
-      if (widget.notKey != null)
+      if (widget.notKey != null) {
         _notKutusu.putAt(widget.notKey!, yeniVeri);
-      else
+      } else {
         _notKutusu.add(yeniVeri);
+      }
       Navigator.pop(context);
     } else {
       ScaffoldMessenger.of(context)
@@ -1000,8 +1105,6 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                             icon: const Icon(Icons.camera_alt,
                                 color: Colors.white, size: 28),
                             onPressed: _resimEkle)),
-
-                    // GÖREV LİSTESİ MODU BUTONU
                     Tooltip(
                       message: "Liste Modu",
                       child: IconButton(
@@ -1015,7 +1118,6 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                             setState(() => _listeModu = !_listeModu),
                       ),
                     ),
-
                     ElevatedButton(
                         onPressed: _kaydetVeyaGuncelle,
                         style: ElevatedButton.styleFrom(
