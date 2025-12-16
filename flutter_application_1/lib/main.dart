@@ -1,11 +1,18 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:signature/signature.dart';
+import 'package:path_provider/path_provider.dart';
+
 import 'NotificationService.dart';
 
 void main() async {
@@ -15,7 +22,7 @@ void main() async {
   await Hive.openBox('notlar_kutusu');
   await Hive.openBox('ayarlar');
 
-  await NotificationService.instance.init(); // burada da olabilir
+  await NotificationService.instance.init();
 
   runApp(const NotUygulamasi());
 }
@@ -80,7 +87,7 @@ class _NotUygulamasiState extends State<NotUygulamasi> {
   }
 }
 
-// --- 1. SAYFA: ANA SAYFA ---
+// -------------------- ANA SAYFA --------------------
 class AnaSayfa extends StatefulWidget {
   final bool darkMi;
   final void Function(bool) onThemeChanged;
@@ -95,15 +102,12 @@ class AnaSayfa extends StatefulWidget {
 class _AnaSayfaState extends State<AnaSayfa> {
   final _notKutusu = Hive.box('notlar_kutusu');
   final _ayarlarKutusu = Hive.box('ayarlar');
-  String _aramaMetni = "";
 
-  // GİZLİ KASA AYARLARI
+  String _aramaMetni = "";
   bool _gizliModAcik = false;
 
-  // --- AKILLI ŞİFRE YÖNETİMİ ---
   Future<void> _kasaIslemleri() async {
     String? kayitliSifre = _ayarlarKutusu.get('kasa_sifresi');
-
     if (kayitliSifre == null) {
       await _sifreOlustur();
     } else {
@@ -111,10 +115,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
     }
   }
 
-  // Şifre Oluşturma (İlk Kez)
   Future<void> _sifreOlustur() async {
-    TextEditingController pass1 = TextEditingController();
-    TextEditingController pass2 = TextEditingController();
+    final pass1 = TextEditingController();
+    final pass2 = TextEditingController();
 
     await showDialog(
       context: context,
@@ -187,9 +190,9 @@ class _AnaSayfaState extends State<AnaSayfa> {
     );
   }
 
-  // Şifre Sorma (Giriş)
   Future<void> _sifreSor(String dogruSifre) async {
-    TextEditingController girilenSifre = TextEditingController();
+    final girilenSifre = TextEditingController();
+
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -238,9 +241,70 @@ class _AnaSayfaState extends State<AnaSayfa> {
     );
   }
 
-  // Notu Gizleme/Gösterme
+  Future<void> _sifreDegistir() async {
+    final eski = TextEditingController();
+    final yeni = TextEditingController();
+    final String? mevcut = _ayarlarKutusu.get('kasa_sifresi');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        title:
+            const Text("Şifre Değiştir", style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: eski,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                  hintText: "Eski Şifre",
+                  hintStyle: TextStyle(color: Colors.grey)),
+            ),
+            TextField(
+              controller: yeni,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                  hintText: "Yeni Şifre",
+                  hintStyle: TextStyle(color: Colors.grey)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("İptal", style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () {
+              if (eski.text == mevcut && yeni.text.isNotEmpty) {
+                _ayarlarKutusu.put('kasa_sifresi', yeni.text);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text("Şifre Değişti!"),
+                  backgroundColor: Colors.green,
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text("Eski şifre yanlış!"),
+                  backgroundColor: Colors.red,
+                ));
+              }
+            },
+            child: const Text("Kaydet", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _notuTasi(int index, Map notData, bool gizle) {
-    Map yeniVeri = Map.from(notData);
+    final yeniVeri = Map<String, dynamic>.from(notData);
     yeniVeri['gizli'] = gizle;
     _notKutusu.putAt(index, yeniVeri);
 
@@ -251,24 +315,33 @@ class _AnaSayfaState extends State<AnaSayfa> {
     ));
   }
 
+  Color _yaziRenginiBul(Color arkaplan) =>
+      arkaplan.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+
+  String _tarihFormatla(String? t) {
+    if (t == null) return "";
+    try {
+      final d = DateTime.parse(t);
+      return "${d.day}.${d.month}.${d.year}";
+    } catch (_) {
+      return "";
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ✅ YAN PANEL (DRAWER) - Tema + Tüm notları sil
       drawer: Drawer(
         child: SafeArea(
           child: ListView(
             children: [
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text(
-                  "Ayarlar",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                child: Text("Ayarlar",
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ),
               const Divider(height: 1),
-
-              // ✅ Tema
               SwitchListTile(
                 secondary:
                     Icon(widget.darkMi ? Icons.dark_mode : Icons.light_mode),
@@ -277,26 +350,23 @@ class _AnaSayfaState extends State<AnaSayfa> {
                 value: widget.darkMi,
                 onChanged: (val) => widget.onThemeChanged(val),
               ),
-
               const Divider(height: 1),
-
-              // ✅ Tüm Notları Sil
               ListTile(
                 leading: const Icon(Icons.delete_sweep, color: Colors.red),
                 title: const Text("Tüm Notları Sil"),
-                onTap: () {
-                  _notKutusu.clear();
-                  Navigator.pop(context); // drawer kapansın
+                onTap: () async {
+                  // Not: istersen burada tüm bildirimleri de iptal edebiliriz.
+                  await _notKutusu.clear();
+                  if (mounted) Navigator.pop(context);
                 },
               ),
-              // ✅ SADECE GİZLİ KASA AÇIKKEN: Şifre Değiştir
               if (_gizliModAcik) ...[
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.password, color: Colors.orange),
                   title: const Text("Gizli Kasa Şifresini Değiştir"),
                   onTap: () {
-                    Navigator.pop(context); // drawer kapansın
+                    Navigator.pop(context);
                     _sifreDegistir();
                   },
                 ),
@@ -305,8 +375,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
           ),
         ),
       ),
-
-      // Gizli kasada appBar aynen kalsın (sadece settings iconu yok)
       appBar: _gizliModAcik
           ? AppBar(
               leading: IconButton(
@@ -317,7 +385,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
                   style: TextStyle(color: Colors.green)),
             )
           : null,
-
       body: SafeArea(
         child: Column(
           children: [
@@ -326,7 +393,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
                   const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
               child: Row(
                 children: [
-                  // ✅ Hamburger her zaman
                   Builder(
                     builder: (ctx) => Container(
                       height: 50,
@@ -342,8 +408,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
                     ),
                   ),
                   const SizedBox(width: 10),
-
-                  // ✅ Arama sadece kasa KAPALIYKEN
                   if (!_gizliModAcik)
                     Expanded(
                       child: Container(
@@ -385,13 +449,14 @@ class _AnaSayfaState extends State<AnaSayfa> {
                 },
                 child: ValueListenableBuilder(
                   valueListenable: _notKutusu.listenable(),
-                  builder: (context, box, widget) {
-                    List<dynamic> tumNotlar = box.values.toList();
-                    Map<int, Map> filtrelenmisNotlar = {};
+                  builder: (context, box, _) {
+                    final tumNotlar = box.values.toList();
+                    final Map<int, Map> filtrelenmisNotlar = {};
 
                     for (int i = 0; i < tumNotlar.length; i++) {
-                      Map veri = tumNotlar[i] as Map;
-                      bool notGizliMi = veri['gizli'] ?? false;
+                      final veri =
+                          Map<String, dynamic>.from(tumNotlar[i] as Map);
+                      final bool notGizliMi = veri['gizli'] ?? false;
 
                       if (_gizliModAcik) {
                         if (notGizliMi) filtrelenmisNotlar[i] = veri;
@@ -400,27 +465,33 @@ class _AnaSayfaState extends State<AnaSayfa> {
                       }
                     }
 
-                    List<int> gosterilecekIndexler =
-                        filtrelenmisNotlar.keys.toList();
+                    var gosterilecekIndexler = filtrelenmisNotlar.keys.toList();
 
                     if (_aramaMetni.isNotEmpty) {
                       gosterilecekIndexler = gosterilecekIndexler.where((idx) {
-                        var not = filtrelenmisNotlar[idx]!;
-                        return not['baslik']
-                                .toString()
-                                .toLowerCase()
-                                .contains(_aramaMetni) ||
-                            not['icerik']
-                                .toString()
-                                .toLowerCase()
-                                .contains(_aramaMetni);
+                        final not = filtrelenmisNotlar[idx]!;
+                        final baslik =
+                            (not['baslik'] ?? "").toString().toLowerCase();
+
+                        final detayli =
+                            (not['detayli_satirlar'] as List? ?? []);
+                        final metin = detayli
+                            .where((s) => (s is Map) && s['tip'] == 'metin')
+                            .map((s) => (s['text'] ?? "").toString())
+                            .join(' ')
+                            .toLowerCase();
+
+                        return baslik.contains(_aramaMetni) ||
+                            metin.contains(_aramaMetni);
                       }).toList();
                     }
 
                     gosterilecekIndexler.sort((a, b) {
-                      var notA = filtrelenmisNotlar[a]!;
-                      var notB = filtrelenmisNotlar[b]!;
-                      return notB['tarih'].compareTo(notA['tarih']);
+                      final notA = filtrelenmisNotlar[a]!;
+                      final notB = filtrelenmisNotlar[b]!;
+                      return (notB['tarih'] ?? "")
+                          .toString()
+                          .compareTo((notA['tarih'] ?? "").toString());
                     });
 
                     if (gosterilecekIndexler.isEmpty) {
@@ -455,20 +526,28 @@ class _AnaSayfaState extends State<AnaSayfa> {
                       crossAxisSpacing: 10,
                       itemCount: gosterilecekIndexler.length,
                       itemBuilder: (context, listIndex) {
-                        int gercekIndex = gosterilecekIndexler[listIndex];
+                        final gercekIndex = gosterilecekIndexler[listIndex];
                         final not = filtrelenmisNotlar[gercekIndex]!;
-                        int renkKodu = not['renk'] ?? 0xFF1F1F1F;
-                        Color kartRengi = Color(renkKodu);
-                        bool isListe = not['listeModu'] ?? false;
-                        List<String> ekliResimler =
-                            List<String>.from(not['resimler'] ?? []);
+                        final renkKodu = not['renk'] ?? 0xFF1F1F1F;
+                        final kartRengi = Color(renkKodu);
+                        final yaziRengi = _yaziRenginiBul(kartRengi);
+
+                        final detayliSatirlar =
+                            (not['detayli_satirlar'] as List? ?? []);
+                        final resimSayisi = detayliSatirlar
+                            .where((s) => (s is Map) && s['tip'] == 'resim')
+                            .length;
+
+                        final reminderStr =
+                            (not['reminderAt'] ?? "").toString();
+                        final hasReminder = reminderStr.isNotEmpty;
 
                         return GestureDetector(
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => NotEkleSayfasi(
+                                builder: (_) => NotEkleSayfasi(
                                   mevcutNot: not,
                                   notKey: gercekIndex,
                                   otomatikGizli: _gizliModAcik,
@@ -507,12 +586,20 @@ class _AnaSayfaState extends State<AnaSayfa> {
                                     ListTile(
                                       leading: const Icon(Icons.delete,
                                           color: Colors.red),
-                                      title: const Text(
-                                        "Notu Sil",
-                                        style: TextStyle(color: Colors.white),
-                                      ),
-                                      onTap: () {
+                                      title: const Text("Notu Sil",
+                                          style:
+                                              TextStyle(color: Colors.white)),
+                                      onTap: () async {
                                         Navigator.pop(ctx);
+
+                                        final existing =
+                                            _notKutusu.getAt(gercekIndex);
+                                        final nid = existing?['notificationId'];
+                                        if (nid != null) {
+                                          await NotificationService.instance
+                                              .cancel(nid as int);
+                                        }
+
                                         _notKutusu.deleteAt(gercekIndex);
                                       },
                                     ),
@@ -530,70 +617,128 @@ class _AnaSayfaState extends State<AnaSayfa> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  not["baslik"] ?? "",
-                                  style: TextStyle(
-                                    color: _yaziRenginiBul(kartRengi),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                isListe
-                                    ? Row(
-                                        children: [
-                                          Icon(
-                                            Icons.check_box,
-                                            size: 16,
-                                            color: _yaziRenginiBul(kartRengi)
-                                                .withOpacity(0.7),
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            "Görev Listesi",
-                                            style: TextStyle(
-                                              color: _yaziRenginiBul(kartRengi)
-                                                  .withOpacity(0.7),
-                                              fontSize: 14,
-                                            ),
-                                          )
-                                        ],
-                                      )
-                                    : Text(
-                                        not["icerik"] ?? "",
-                                        maxLines: 6,
-                                        overflow: TextOverflow.ellipsis,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        (not["baslik"] ?? "").toString(),
                                         style: TextStyle(
-                                          color: _yaziRenginiBul(kartRengi)
-                                              .withOpacity(0.7),
-                                          fontSize: 14,
+                                          color: yaziRengi,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
                                         ),
                                       ),
-                                if (ekliResimler.isNotEmpty)
+                                    ),
+                                    if (hasReminder)
+                                      Icon(Icons.alarm,
+                                          size: 16,
+                                          color: yaziRengi.withOpacity(0.7)),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                if (detayliSatirlar.isNotEmpty)
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: detayliSatirlar
+                                        .take(5)
+                                        .map<Widget>((s) {
+                                      if (s is! Map)
+                                        return const SizedBox.shrink();
+
+                                      if (s['tip'] == 'resim') {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                              bottom: 4.0),
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.image,
+                                                  size: 16,
+                                                  color: yaziRengi
+                                                      .withOpacity(0.7)),
+                                              const SizedBox(width: 4),
+                                              Text("(Resim)",
+                                                  style: TextStyle(
+                                                      color: yaziRengi
+                                                          .withOpacity(0.7),
+                                                      fontSize: 12)),
+                                            ],
+                                          ),
+                                        );
+                                      }
+
+                                      final isBox =
+                                          (s['isCheckbox'] ?? false) as bool;
+                                      final isChecked =
+                                          (s['isChecked'] ?? false) as bool;
+                                      final text = (s['text'] ?? "").toString();
+
+                                      return Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 4.0),
+                                        child: Row(
+                                          children: [
+                                            if (isBox)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    right: 6.0),
+                                                child: Icon(
+                                                  isChecked
+                                                      ? Icons.check_box
+                                                      : Icons
+                                                          .check_box_outline_blank,
+                                                  size: 16,
+                                                  color: yaziRengi
+                                                      .withOpacity(0.7),
+                                                ),
+                                              ),
+                                            Expanded(
+                                              child: Text(
+                                                text,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: isChecked
+                                                      ? yaziRengi
+                                                          .withOpacity(0.4)
+                                                      : yaziRengi
+                                                          .withOpacity(0.7),
+                                                  fontSize: 14,
+                                                  decoration: isChecked
+                                                      ? TextDecoration
+                                                          .lineThrough
+                                                      : null,
+                                                  decorationColor: yaziRengi
+                                                      .withOpacity(0.4),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                if (resimSayisi > 0)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 10),
                                     child: Row(
                                       children: [
                                         const Icon(Icons.image,
                                             size: 14, color: Colors.white70),
-                                        Text(
-                                          " ${ekliResimler.length} ",
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
-                                          ),
-                                        ),
+                                        Text(" $resimSayisi ",
+                                            style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12)),
                                       ],
                                     ),
                                   ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  _tarihFormatla(not["tarih"]),
+                                  _tarihFormatla(
+                                      (not["tarih"] ?? "").toString()),
                                   style: TextStyle(
-                                    color: _yaziRenginiBul(kartRengi)
-                                        .withOpacity(0.5),
-                                    fontSize: 12,
-                                  ),
+                                      color: yaziRengi.withOpacity(0.5),
+                                      fontSize: 12),
                                 ),
                               ],
                             ),
@@ -608,7 +753,6 @@ class _AnaSayfaState extends State<AnaSayfa> {
           ],
         ),
       ),
-
       floatingActionButton: SizedBox(
         width: 65,
         height: 65,
@@ -618,126 +762,43 @@ class _AnaSayfaState extends State<AnaSayfa> {
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  NotEkleSayfasi(otomatikGizli: _gizliModAcik),
-            ),
+                builder: (_) => NotEkleSayfasi(otomatikGizli: _gizliModAcik)),
           ),
-          child: Icon(
-            Icons.add,
-            size: 32,
-            color: _gizliModAcik ? Colors.white : Colors.black,
-          ),
+          child: Icon(Icons.add,
+              size: 32, color: _gizliModAcik ? Colors.white : Colors.black),
         ),
-      ),
-    );
-  }
-
-  Color _yaziRenginiBul(Color arkaplan) =>
-      arkaplan.computeLuminance() > 0.5 ? Colors.black : Colors.white;
-
-  String _tarihFormatla(String? t) {
-    if (t == null) return "";
-    try {
-      DateTime d = DateTime.parse(t);
-      return "${d.day}.${d.month}.${d.year}";
-    } catch (e) {
-      return "";
-    }
-  }
-
-  Future<void> _sifreDegistir() async {
-    TextEditingController eski = TextEditingController();
-    TextEditingController yeni = TextEditingController();
-    String? mevcut = _ayarlarKutusu.get('kasa_sifresi');
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1F1F1F),
-        title:
-            const Text("Şifre Değiştir", style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: eski,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: "Eski Şifre",
-                hintStyle: TextStyle(color: Colors.grey),
-              ),
-            ),
-            TextField(
-              controller: yeni,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: "Yeni Şifre",
-                hintStyle: TextStyle(color: Colors.grey),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("İptal", style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(
-            onPressed: () {
-              if (eski.text == mevcut && yeni.text.isNotEmpty) {
-                _ayarlarKutusu.put('kasa_sifresi', yeni.text);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text("Şifre Değişti!"),
-                  backgroundColor: Colors.green,
-                ));
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text("Eski şifre yanlış!"),
-                  backgroundColor: Colors.red,
-                ));
-              }
-            },
-            child: const Text("Kaydet", style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }
 }
 
-// --- 2. SAYFA: NOT EKLEME/DÜZENLEME (SENİN KODUN AYNEN DEVAM) ---
+// -------------------- NOT EKLE / DÜZENLE --------------------
 class NotEkleSayfasi extends StatefulWidget {
   final Map? mevcutNot;
-  final int? notKey; // Index
+  final int? notKey;
   final bool otomatikGizli;
 
   const NotEkleSayfasi(
       {super.key, this.mevcutNot, this.notKey, this.otomatikGizli = false});
+
   @override
   State<NotEkleSayfasi> createState() => _NotEkleSayfasiState();
 }
 
 class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
   final TextEditingController _baslikController = TextEditingController();
-  final TextEditingController _icerikController = TextEditingController();
   final _notKutusu = Hive.box('notlar_kutusu');
   final SpeechToText _speechToText = SpeechToText();
+
+  final List<NotSatiri> _satirlar = [];
 
   bool _dinliyorMu = false;
   String _geciciYazi = "";
   int _secilenRenk = 0xFF1F1F1F;
   bool _sabitMi = false;
   bool _gizliMi = false;
-  List<String> _ekliResimler = [];
-  bool _listeModu = false;
-  List<Map<String, dynamic>> _gorevListesi = [];
 
-  // ✅ Hatırlatıcı alanları
+  // Hatırlatıcı alanları (merge)
   DateTime? _reminderDateTime;
   int? _notificationId;
 
@@ -749,25 +810,65 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     _gizliMi = widget.otomatikGizli;
 
     if (widget.mevcutNot != null) {
-      _baslikController.text = widget.mevcutNot!['baslik'] ?? "";
-      _icerikController.text = widget.mevcutNot!['icerik'] ?? "";
+      _baslikController.text = (widget.mevcutNot!['baslik'] ?? "").toString();
       _secilenRenk = widget.mevcutNot!['renk'] ?? 0xFF1F1F1F;
       _sabitMi = widget.mevcutNot!['sabit'] ?? false;
       _gizliMi = widget.mevcutNot!['gizli'] ?? false;
-      _listeModu = widget.mevcutNot!['listeModu'] ?? false;
-      _ekliResimler = List<String>.from(widget.mevcutNot!['resimler'] ?? []);
-      List hamListe = widget.mevcutNot!['gorevListesi'] ?? [];
-      _gorevListesi =
-          hamListe.map((e) => Map<String, dynamic>.from(e)).toList();
 
-      // ✅ Hatırlatıcı yükle
+      // Hatırlatıcı yükle
       final reminderStr = widget.mevcutNot!['reminderAt'];
       if (reminderStr != null && reminderStr.toString().isNotEmpty) {
         try {
-          _reminderDateTime = DateTime.parse(reminderStr);
+          _reminderDateTime = DateTime.parse(reminderStr.toString());
         } catch (_) {}
       }
       _notificationId = widget.mevcutNot!['notificationId'];
+
+      final detayli = (widget.mevcutNot!['detayli_satirlar'] as List? ?? []);
+
+      // Backward compatibility: eski alanlar varsa detayli'ye dönüştür
+      final eskiListe = (widget.mevcutNot!['gorevListesi'] as List? ?? []);
+      final duzMetin = (widget.mevcutNot!['icerik'] ?? "").toString();
+      final eskiResimler =
+          List<String>.from(widget.mevcutNot!['resimler'] ?? []);
+
+      if (detayli.isNotEmpty) {
+        for (final d in detayli) {
+          if (d is! Map) continue;
+          if (d['tip'] == 'resim') {
+            _satirlar
+                .add(NotSatiri.resim(resimYolu: d['resimYolu']?.toString()));
+          } else {
+            _satirEkle(
+              text: (d['text'] ?? "").toString(),
+              isCheckbox: (d['isCheckbox'] ?? false) as bool,
+              isChecked: (d['isChecked'] ?? false) as bool,
+            );
+          }
+        }
+      } else {
+        if (eskiListe.isNotEmpty) {
+          for (final e in eskiListe) {
+            if (e is! Map) continue;
+            _satirEkle(
+              text: (e['text'] ?? "").toString(),
+              isCheckbox: true,
+              isChecked: (e['yapildi'] ?? false) as bool,
+            );
+          }
+        } else if (duzMetin.isNotEmpty) {
+          for (final p in duzMetin.split('\n')) {
+            _satirEkle(text: p, isCheckbox: false);
+          }
+        }
+        for (final resimYolu in eskiResimler) {
+          _satirlar.add(NotSatiri.resim(resimYolu: resimYolu));
+        }
+      }
+
+      if (_satirlar.isEmpty) _satirEkle();
+    } else {
+      _satirEkle();
     }
   }
 
@@ -775,30 +876,34 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     await _speechToText.initialize();
   }
 
-  void _sesleYazmayiYonet() async {
-    if (_dinliyorMu) {
-      await _speechToText.stop();
-      setState(() {
-        _dinliyorMu = false;
-        if (_geciciYazi.isNotEmpty) {
-          if (_listeModu) {
-            _gorevListesi.add({'text': _geciciYazi, 'yapildi': false});
-          } else {
-            _icerikController.text = "${_icerikController.text} $_geciciYazi";
-          }
-          _geciciYazi = "";
-        }
-      });
-    } else {
-      setState(() => _dinliyorMu = true);
-      await _speechToText.listen(
-        onResult: (r) => setState(() => _geciciYazi = r.recognizedWords),
-        localeId: "tr_TR",
-      );
-    }
+  void _satirEkle(
+      {String text = "",
+      bool isCheckbox = false,
+      bool isChecked = false,
+      int? index}) {
+    final yeniSatir = NotSatiri.metin(
+      controller: TextEditingController(text: text),
+      focusNode: FocusNode(),
+      isCheckbox: isCheckbox,
+      isChecked: isChecked,
+    );
+    setState(() {
+      if (index != null) {
+        _satirlar.insert(index, yeniSatir);
+      } else {
+        _satirlar.add(yeniSatir);
+      }
+    });
   }
 
-  // ✅ Hatırlatıcı seç (tarih + saat)
+  int _aktifIndexiBul() {
+    int idx = _satirlar
+        .indexWhere((s) => s.tip == SatirTipi.metin && s.focusNode!.hasFocus);
+    if (idx == -1) idx = _satirlar.length;
+    return idx;
+  }
+
+  // ---- Hatırlatıcı: seç/kaldır (merge) ----
   Future<void> _hatirlaticiSec() async {
     final now = DateTime.now();
 
@@ -820,26 +925,20 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
 
     if (pickedTime == null) return;
 
-    final dt = DateTime(
-      pickedDate.year,
-      pickedDate.month,
-      pickedDate.day,
-      pickedTime.hour,
-      pickedTime.minute,
-    );
+    final dt = DateTime(pickedDate.year, pickedDate.month, pickedDate.day,
+        pickedTime.hour, pickedTime.minute);
 
     if (dt.isBefore(now.add(const Duration(seconds: 5)))) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Geçmiş bir saat seçilemez.")),
-      );
+          const SnackBar(content: Text("Geçmiş bir saat seçilemez.")));
       return;
     }
 
     setState(() => _reminderDateTime = dt);
   }
 
-  // ✅ Hatırlatıcı kaldır
-  void _hatirlaticiyiKaldir() async {
+  Future<void> _hatirlaticiyiKaldir() async {
     if (_notificationId != null) {
       await NotificationService.instance.cancel(_notificationId!);
     }
@@ -849,41 +948,206 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     });
   }
 
+  String _formatReminder(DateTime dt) {
+    final dd = dt.day.toString().padLeft(2, '0');
+    final mm = dt.month.toString().padLeft(2, '0');
+    final yyyy = dt.year.toString();
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return "$dd.$mm.$yyyy  $hh:$min";
+  }
+
+  // ---- Sesle yazma ----
+  void _sesleYazmayiYonet() async {
+    if (_dinliyorMu) {
+      await _speechToText.stop();
+      setState(() {
+        _dinliyorMu = false;
+        if (_geciciYazi.isNotEmpty) {
+          final idx = _satirlar.indexWhere(
+              (s) => s.tip == SatirTipi.metin && s.focusNode!.hasFocus);
+          if (idx == -1) {
+            _satirEkle(text: _geciciYazi);
+          } else {
+            _satirlar[idx].controller!.text += " $_geciciYazi";
+          }
+          _geciciYazi = "";
+        }
+      });
+    } else {
+      setState(() => _dinliyorMu = true);
+      await _speechToText.listen(
+        onResult: (r) => setState(() => _geciciYazi = r.recognizedWords),
+        localeId: "tr_TR",
+      );
+    }
+  }
+
+  // ---- Checkbox toggle ----
+  void _toggleCheckbox() {
+    int idx = _satirlar
+        .indexWhere((s) => s.tip == SatirTipi.metin && s.focusNode!.hasFocus);
+
+    if (idx == -1) {
+      _satirEkle(isCheckbox: true);
+      Future.delayed(Duration.zero, () {
+        _satirlar.last.focusNode!.requestFocus();
+      });
+      return;
+    }
+
+    setState(() {
+      _satirlar[idx].isCheckbox = !_satirlar[idx].isCheckbox;
+      if (!_satirlar[idx].isCheckbox) _satirlar[idx].isChecked = false;
+    });
+    _satirlar[idx].focusNode!.requestFocus();
+  }
+
+  // ---- OCR: aktif satıra ekleme ----
   Future<void> _ocrIslemi() async {
-    final ImagePicker picker = ImagePicker();
-    showModalBottomSheet(
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.camera);
+    if (image == null) return;
+
+    final inputImage = InputImage.fromFilePath(image.path);
+    final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+    final recognizedText = await textRecognizer.processImage(inputImage);
+
+    setState(() {
+      final satirlar = recognizedText.text.split('\n');
+      int eklemeIndexi = _aktifIndexiBul();
+      for (final s in satirlar) {
+        if (s.trim().isNotEmpty) {
+          _satirEkle(text: s.trim(), index: eklemeIndexi);
+          eklemeIndexi++;
+        }
+      }
+    });
+    textRecognizer.close();
+  }
+
+  // ---- Resim ekle ----
+  Future<void> _resimEkle(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: source);
+    if (image != null) {
+      setState(() {
+        int idx = _aktifIndexiBul();
+        if (idx < _satirlar.length &&
+            _satirlar[idx].tip == SatirTipi.metin &&
+            _satirlar[idx].controller!.text.isNotEmpty) {
+          idx++;
+        }
+        _satirlar.insert(idx, NotSatiri.resim(resimYolu: image.path));
+      });
+    }
+  }
+
+  // ---- Çizim (Signature) -> resim satırı ----
+  Future<void> _cizimYap() async {
+    final SignatureController controller = SignatureController(
+      penStrokeWidth: 3,
+      penColor: Colors.white,
+      exportBackgroundColor: Colors.transparent,
+    );
+
+    await showDialog(
       context: context,
-      builder: (ctx) => SizedBox(
-        height: 150,
-        child: Column(
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.black,
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const ListTile(
-              title: Text(
-                "Metni Tara",
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            Container(
+              height: 350,
+              width: double.maxFinite,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                color: Colors.black,
+              ),
+              child: Signature(
+                controller: controller,
+                backgroundColor: Colors.black,
               ),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _ocrGerceklestir(ImageSource.camera);
-                  },
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text("Kamera"),
+                IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.red),
+                  onPressed: () => controller.clear(),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _ocrGerceklestir(ImageSource.gallery);
-                  },
-                  icon: const Icon(Icons.image),
-                  label: const Text("Galeri"),
+                IconButton(
+                  icon: const Icon(Icons.undo, color: Colors.orange),
+                  onPressed: () => controller.undo(),
                 ),
               ],
+            )
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("İptal", style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (controller.isNotEmpty) {
+                final Uint8List? data = await controller.toPngBytes();
+                if (!context.mounted) return;
+
+                if (data != null) {
+                  final tempDir = await getTemporaryDirectory();
+                  final file = await File(
+                    '${tempDir.path}/draw_${DateTime.now().millisecondsSinceEpoch}.png',
+                  ).create();
+                  file.writeAsBytesSync(data);
+
+                  setState(() {
+                    int idx = _aktifIndexiBul();
+                    if (idx < _satirlar.length &&
+                        _satirlar[idx].tip == SatirTipi.metin &&
+                        _satirlar[idx].controller!.text.isNotEmpty) {
+                      idx++;
+                    }
+                    _satirlar.insert(
+                        idx, NotSatiri.resim(resimYolu: file.path));
+                  });
+                }
+              }
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: const Text("Kaydet", style: TextStyle(color: Colors.green)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+  }
+
+  // ---- Resim büyüt ----
+  void _resimiBuyut(String resimYolu) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              panEnabled: true,
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.file(File(resimYolu)),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
           ],
         ),
@@ -891,102 +1155,185 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
     );
   }
 
-  Future<void> _ocrGerceklestir(ImageSource source) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: source);
-    if (image == null) return;
+  // ---- Fotoğraf üstüne çiz ----
+  Future<void> _fotografUzerineCiz(int index, String imagePath) async {
+    final SignatureController controller = SignatureController(
+      penStrokeWidth: 3,
+      penColor: Colors.red,
+      exportBackgroundColor: Colors.transparent,
+    );
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text("Metin taranıyor...")));
+    final GlobalKey globalKey = GlobalKey();
 
-    final inputImage = InputImage.fromFilePath(image.path);
-    final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-    final RecognizedText recognizedText =
-        await textRecognizer.processImage(inputImage);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.black,
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RepaintBoundary(
+              key: globalKey,
+              child: SizedBox(
+                height: 400,
+                width: double.maxFinite,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Image.file(File(imagePath), fit: BoxFit.contain),
+                    ),
+                    Positioned.fill(
+                      child: Signature(
+                        controller: controller,
+                        backgroundColor: Colors.transparent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.red),
+                  onPressed: () => controller.clear(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.undo, color: Colors.orange),
+                  onPressed: () => controller.undo(),
+                ),
+              ],
+            )
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final boundary = globalKey.currentContext!.findRenderObject()
+                  as RenderRepaintBoundary;
+              final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+              final ByteData? byteData =
+                  await image.toByteData(format: ui.ImageByteFormat.png);
 
-    setState(() {
-      if (_listeModu) {
-        List<String> satirlar = recognizedText.text.split('\n');
-        for (var s in satirlar) {
-          if (s.trim().isNotEmpty) {
-            _gorevListesi.add({'text': s.trim(), 'yapildi': false});
-          }
-        }
-      } else {
-        _icerikController.text =
-            "${_icerikController.text}\n${recognizedText.text}";
-      }
-    });
+              if (!mounted) return;
 
-    textRecognizer.close();
+              if (byteData != null) {
+                final tempDir = await getTemporaryDirectory();
+                final file = await File(
+                  '${tempDir.path}/annotated_${DateTime.now().millisecondsSinceEpoch}.png',
+                ).create();
+                file.writeAsBytesSync(byteData.buffer.asUint8List());
+
+                setState(() {
+                  _satirlar[index].resimYolu = file.path;
+                });
+              }
+
+              if (mounted && ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text("Kaydet",
+                style: TextStyle(
+                    color: Colors.green, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
   }
 
-  Future<void> _resimEkle() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.camera);
-    if (image != null) setState(() => _ekliResimler.add(image.path));
-  }
-
-  void _resimSil(int index) {
-    setState(() => _ekliResimler.removeAt(index));
-  }
-
+  // ---- Paylaş ----
   void _paylas() {
+    final icerik = _satirlar.where((s) => s.tip == SatirTipi.metin).map((e) {
+      final prefix = e.isCheckbox ? (e.isChecked ? "[x] " : "[ ] ") : "";
+      return "$prefix${e.controller!.text}";
+    }).join("\n");
+
     if (_baslikController.text.isNotEmpty) {
-      Share.share("${_baslikController.text}\n\n${_icerikController.text}");
+      Share.share(
+          "${_baslikController.text}\n\n(Resimler paylaşılamıyor)\n\n$icerik");
     }
   }
 
-  // ✅ Not silerken bildirimi de iptal et
-  void _sil() async {
+  // ---- Sil: bildirimi de iptal et (merge) ----
+  Future<void> _sil() async {
     if (widget.notKey != null) {
       final existing = _notKutusu.getAt(widget.notKey!);
       final nid = existing?['notificationId'];
       if (nid != null) {
         await NotificationService.instance.cancel(nid as int);
       }
-
       _notKutusu.deleteAt(widget.notKey!);
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
     }
   }
 
-  // ✅ Kaydet/Güncelle + schedule/cancel
-  void _kaydetVeyaGuncelle() async {
+  // ---- Kaydet/Güncelle: detayli + reminder schedule/cancel (merge) ----
+  Future<void> _kaydetVeyaGuncelle() async {
+    // dinleme açıkken kaydetme: stop + geçici yazıyı ekle
     if (_dinliyorMu) {
-      _speechToText.stop();
-      if (_geciciYazi.isNotEmpty && !_listeModu) {
-        _icerikController.text = "${_icerikController.text} $_geciciYazi";
+      await _speechToText.stop();
+      setState(() => _dinliyorMu = false);
+      if (_geciciYazi.isNotEmpty) {
+        final idx = _satirlar.indexWhere(
+            (s) => s.tip == SatirTipi.metin && s.focusNode!.hasFocus);
+        if (idx == -1) {
+          _satirEkle(text: _geciciYazi);
+        } else {
+          _satirlar[idx].controller!.text += " $_geciciYazi";
+        }
+        _geciciYazi = "";
       }
     }
 
-    final bosMu = _baslikController.text.isEmpty &&
-        _icerikController.text.isEmpty &&
-        _ekliResimler.isEmpty &&
-        _gorevListesi.isEmpty;
+    final detayliListe = _satirlar.map((s) {
+      if (s.tip == SatirTipi.resim) {
+        return {"tip": "resim", "resimYolu": s.resimYolu};
+      } else {
+        return {
+          "tip": "metin",
+          "text": s.controller!.text,
+          "isCheckbox": s.isCheckbox,
+          "isChecked": s.isChecked,
+        };
+      }
+    }).toList();
 
-    if (bosMu) {
+    final icerikVarMi = _satirlar.any((s) =>
+        (s.tip == SatirTipi.resim) ||
+        (s.tip == SatirTipi.metin && s.controller!.text.trim().isNotEmpty));
+
+    if (_baslikController.text.isEmpty && !icerikVarMi) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text("Boş not kaydedilemez")));
       return;
     }
 
-    // ✅ notification id üret / koru
+    // notification id üret / koru
     _notificationId ??=
         DateTime.now().millisecondsSinceEpoch.remainder(1000000000);
 
-    Map yeniVeri = {
+    final yeniVeri = <String, dynamic>{
       "baslik": _baslikController.text,
-      "icerik": _icerikController.text,
+      "detayli_satirlar": detayliListe,
       "tarih": DateTime.now().toString(),
       "renk": _secilenRenk,
       "sabit": _sabitMi,
       "gizli": _gizliMi,
-      "listeModu": _listeModu,
-      "gorevListesi": _gorevListesi,
-      "resimler": _ekliResimler,
 
-      // ✅ Hatırlatıcı
+      // eski alanlar (compat)
+      "icerik": "",
+      "resimler": [],
+      "gorevListesi": [],
+
+      // reminder
       "reminderAt": _reminderDateTime?.toIso8601String(),
       "notificationId": _notificationId,
     };
@@ -997,15 +1344,23 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       _notKutusu.add(yeniVeri);
     }
 
-    // ✅ Hatırlatıcı varsa kur, yoksa iptal et
+    // schedule / cancel
     if (_reminderDateTime != null && _notificationId != null) {
       await NotificationService.instance.schedule(
         id: _notificationId!,
         title: _baslikController.text.isNotEmpty
             ? _baslikController.text
             : "Not Hatırlatıcı",
-        body: _icerikController.text.isNotEmpty
-            ? _icerikController.text
+        body: _satirlar
+                .where((s) => s.tip == SatirTipi.metin)
+                .map((e) => e.controller!.text)
+                .join("\n")
+                .trim()
+                .isNotEmpty
+            ? _satirlar
+                .where((s) => s.tip == SatirTipi.metin)
+                .map((e) => e.controller!.text)
+                .join("\n")
             : "Notunu kontrol et",
         dateTime: _reminderDateTime!,
       );
@@ -1015,16 +1370,7 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       }
     }
 
-    Navigator.pop(context);
-  }
-
-  String _formatReminder(DateTime dt) {
-    final dd = dt.day.toString().padLeft(2, '0');
-    final mm = dt.month.toString().padLeft(2, '0');
-    final yyyy = dt.year.toString();
-    final hh = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    return "$dd.$mm.$yyyy  $hh:$min";
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -1075,10 +1421,9 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                   TextField(
                     controller: _baslikController,
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold),
                     decoration: const InputDecoration(
                       hintText: "Başlık",
                       hintStyle: TextStyle(color: Colors.white54),
@@ -1086,7 +1431,7 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                     ),
                   ),
 
-                  // ✅ Hatırlatıcı UI (Başlığın hemen altı)
+                  // ---- Hatırlatıcı UI (merge) ----
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1108,9 +1453,8 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                           ),
                         ),
                         TextButton(
-                          onPressed: _hatirlaticiSec,
-                          child: const Text("Seç"),
-                        ),
+                            onPressed: _hatirlaticiSec,
+                            child: const Text("Seç")),
                         if (_reminderDateTime != null)
                           IconButton(
                             onPressed: _hatirlaticiyiKaldir,
@@ -1124,131 +1468,150 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
 
                   const SizedBox(height: 10),
 
-                  if (_listeModu) ...[
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      onReorder: (oldIndex, newIndex) {
-                        setState(() {
-                          if (newIndex > oldIndex) newIndex -= 1;
-                          final item = _gorevListesi.removeAt(oldIndex);
-                          _gorevListesi.insert(newIndex, item);
-                        });
-                      },
-                      children: [
-                        for (int index = 0;
-                            index < _gorevListesi.length;
-                            index++)
-                          ListTile(
-                            key: ValueKey(index),
-                            leading: Checkbox(
-                              value: _gorevListesi[index]['yapildi'],
-                              onChanged: (val) => setState(
-                                  () => _gorevListesi[index]['yapildi'] = val),
-                              checkColor: Colors.black,
-                              activeColor: Colors.white,
+                  // ---- Satırlar: metin / resim ----
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _satirlar.length,
+                    itemBuilder: (context, index) {
+                      final satir = _satirlar[index];
+
+                      if (satir.tip == SatirTipi.resim) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Stack(
+                            alignment: Alignment.topRight,
+                            children: [
+                              GestureDetector(
+                                onTap: () => _resimiBuyut(satir.resimYolu!),
+                                child: Container(
+                                  width: double.infinity,
+                                  constraints:
+                                      const BoxConstraints(maxHeight: 300),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.file(
+                                      File(satir.resimYolu!),
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const CircleAvatar(
+                                      backgroundColor: Colors.black54,
+                                      radius: 16,
+                                      child: Icon(Icons.brush,
+                                          color: Colors.yellowAccent, size: 18),
+                                    ),
+                                    onPressed: () => _fotografUzerineCiz(
+                                        index, satir.resimYolu!),
+                                  ),
+                                  IconButton(
+                                    icon: const CircleAvatar(
+                                      backgroundColor: Colors.black54,
+                                      radius: 16,
+                                      child: Icon(Icons.close,
+                                          color: Colors.white, size: 18),
+                                    ),
+                                    onPressed: () => setState(
+                                        () => _satirlar.removeAt(index)),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // metin satırı
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (satir.isCheckbox)
+                            Transform.scale(
+                              scale: 1.1,
+                              child: Checkbox(
+                                value: satir.isChecked,
+                                checkColor: Colors.black,
+                                activeColor: Colors.white,
+                                side: const BorderSide(
+                                    color: Colors.white70, width: 2),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4)),
+                                onChanged: (bool? val) => setState(
+                                    () => satir.isChecked = val ?? false),
+                              ),
                             ),
-                            title: TextFormField(
-                              initialValue: _gorevListesi[index]['text'],
+                          Expanded(
+                            child: TextField(
+                              controller: satir.controller,
+                              focusNode: satir.focusNode,
                               style: TextStyle(
-                                color: Colors.white,
-                                decoration: _gorevListesi[index]['yapildi']
+                                color: satir.isChecked
+                                    ? Colors.white54
+                                    : Colors.white,
+                                fontSize: 18,
+                                decoration: satir.isChecked
                                     ? TextDecoration.lineThrough
                                     : null,
+                                decorationColor: Colors.white54,
                               ),
                               decoration: const InputDecoration(
-                                  border: InputBorder.none),
-                              onChanged: (val) =>
-                                  _gorevListesi[index]['text'] = val,
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.close, color: Colors.grey),
-                              onPressed: () =>
-                                  setState(() => _gorevListesi.removeAt(index)),
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                              maxLines: null,
+                              textInputAction: TextInputAction.next,
+                              onSubmitted: (_) {
+                                _satirEkle(
+                                    index: index + 1,
+                                    isCheckbox: satir.isCheckbox);
+                                Future.delayed(Duration.zero, () {
+                                  _satirlar[index + 1]
+                                      .focusNode!
+                                      .requestFocus();
+                                });
+                              },
                             ),
                           ),
-                      ],
-                    ),
-                    TextButton.icon(
-                      onPressed: () => setState(() =>
-                          _gorevListesi.add({'text': '', 'yapildi': false})),
-                      icon: const Icon(Icons.add, color: Colors.white70),
-                      label: const Text(
-                        "Yeni Madde Ekle",
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                  ] else
-                    TextField(
-                      controller: _icerikController,
-                      maxLines: null,
-                      style: const TextStyle(color: Colors.white, fontSize: 18),
-                      decoration: const InputDecoration(
-                        hintText: "Notunuzu yazın...",
-                        hintStyle: TextStyle(color: Colors.white54),
-                        border: InputBorder.none,
-                      ),
-                    ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  // boş alana tıklayınca yeni satır
+                  GestureDetector(
+                    onTap: () {
+                      _satirEkle();
+                      Future.delayed(Duration.zero, () {
+                        _satirlar.last.focusNode!.requestFocus();
+                      });
+                    },
+                    child: Container(height: 100, color: Colors.transparent),
+                  ),
 
                   if (_dinliyorMu)
                     Text(
                       " $_geciciYazi...",
                       style: const TextStyle(
-                        fontSize: 18,
-                        color: Colors.white,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-
-                  const SizedBox(height: 20),
-
-                  if (_ekliResimler.isNotEmpty)
-                    SizedBox(
-                      height: 120,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _ekliResimler.length,
-                        itemBuilder: (context, index) {
-                          return Stack(
-                            children: [
-                              Container(
-                                margin:
-                                    const EdgeInsets.only(right: 10, top: 10),
-                                width: 100,
-                                height: 100,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  image: DecorationImage(
-                                    image:
-                                        FileImage(File(_ekliResimler[index])),
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                child: GestureDetector(
-                                  onTap: () => _resimSil(index),
-                                  child: const CircleAvatar(
-                                    radius: 12,
-                                    backgroundColor: Colors.red,
-                                    child: Icon(Icons.close,
-                                        size: 16, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontStyle: FontStyle.italic),
                     ),
                 ],
               ),
             ),
           ),
 
-          // alt toolbar
+          // ---- Alt Toolbar ----
           Container(
             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             decoration: const BoxDecoration(
@@ -1313,26 +1676,45 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
                         onPressed: _sesleYazmayiYonet,
                       ),
                     ),
+                    PopupMenuButton<ImageSource>(
+                      tooltip: "Resim Ekle",
+                      icon: const Icon(Icons.camera_alt,
+                          color: Colors.white, size: 28),
+                      onSelected: (source) => _resimEkle(source),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: ImageSource.camera,
+                          child: Row(children: [
+                            Icon(Icons.camera, color: Colors.black),
+                            SizedBox(width: 8),
+                            Text("Kamera")
+                          ]),
+                        ),
+                        PopupMenuItem(
+                          value: ImageSource.gallery,
+                          child: Row(children: [
+                            Icon(Icons.image, color: Colors.black),
+                            SizedBox(width: 8),
+                            Text("Galeri")
+                          ]),
+                        ),
+                      ],
+                      color: Colors.white,
+                    ),
                     Tooltip(
-                      message: "Resim Ekle",
+                      message: "Çizim Yap",
                       child: IconButton(
-                        icon: const Icon(Icons.camera_alt,
+                        icon: const Icon(Icons.draw,
                             color: Colors.white, size: 28),
-                        onPressed: _resimEkle,
+                        onPressed: _cizimYap,
                       ),
                     ),
                     Tooltip(
-                      message: "Liste Modu",
+                      message: "Kutucuk Ekle/Kaldır",
                       child: IconButton(
-                        icon: Icon(
-                          _listeModu ? Icons.list_alt : Icons.edit_note,
-                          color: _listeModu
-                              ? const Color(0xFFFFC107)
-                              : Colors.white,
-                          size: 28,
-                        ),
-                        onPressed: () =>
-                            setState(() => _listeModu = !_listeModu),
+                        icon: const Icon(Icons.check_box_outlined,
+                            color: Colors.white, size: 28),
+                        onPressed: _toggleCheckbox,
                       ),
                     ),
                     ElevatedButton(
@@ -1353,4 +1735,32 @@ class _NotEkleSayfasiState extends State<NotEkleSayfasi> {
       ),
     );
   }
+}
+
+// -------------------- MODELLER --------------------
+enum SatirTipi { metin, resim }
+
+class NotSatiri {
+  SatirTipi tip;
+  TextEditingController? controller;
+  FocusNode? focusNode;
+  bool isCheckbox;
+  bool isChecked;
+  String? resimYolu;
+
+  NotSatiri.metin({
+    required this.controller,
+    required this.focusNode,
+    this.isCheckbox = false,
+    this.isChecked = false,
+  })  : tip = SatirTipi.metin,
+        resimYolu = null;
+
+  NotSatiri.resim({
+    required this.resimYolu,
+  })  : tip = SatirTipi.resim,
+        controller = null,
+        focusNode = null,
+        isCheckbox = false,
+        isChecked = false;
 }
